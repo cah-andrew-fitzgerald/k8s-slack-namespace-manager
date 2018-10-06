@@ -58,5 +58,8 @@ spec:
           - containerPort: 8080
         env:
           - name: SLACK_TOKEN
-            value: NzAOmI7gUdvPkUARiIKflLVb
+            valueFrom:
+              secretKeyRef:
+                name: slack-token
+                key: value
       restartPolicy: Always
