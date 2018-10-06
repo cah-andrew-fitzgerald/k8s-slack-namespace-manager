@@ -274,8 +274,6 @@ func (r K8sRequest) getSecretName(account *v1.ServiceAccount) (string, error) {
 }
 
 
-}
-
 func (r K8sRequest) getSecretValue(sn string) (string, error) {
 	println("getting secret", sn)
 	secret, err := r.K8s.CoreV1().Secrets(r.NsName()).Get(sn, metav1.GetOptions{})
