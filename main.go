@@ -1,26 +1,29 @@
 package main
 
 import (
+	"crypto/tls"
+	"github.com/pkg/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	watch2 "k8s.io/apimachinery/pkg/watch"
 	"os"
+	"time"
 
-	"path/filepath"
-	"net/http"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/nlopes/slack"
-	"strings"
-	"log"
-	"bytes"
 	"io/ioutil"
-	"encoding/json"
 	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	v12 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"log"
+	"net/http"
+	"path/filepath"
+	"strings"
 )
 
 var clientset *kubernetes.Clientset
@@ -28,10 +31,9 @@ var host string
 var token = ""
 
 func main() {
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	token = os.Getenv("SLACK_TOKEN")
-	configFile := filepath.Join(homedir.HomeDir(), ".kube", "config")
-	config, err := clientcmd.BuildConfigFromFlags("", configFile)
-	host = config.Host
+	config, err := getKubeConfig()
 	if err != nil {
 		panic(err.Error())
 	}
@@ -43,6 +45,15 @@ func main() {
 	http.HandleFunc("/", handler)
 	http.ListenAndServe(":8080", nil)
 
+}
+
+func getKubeConfig() (*rest.Config, error) {
+	if _, err := os.Stat("/var/run/secrets/kubernetes.io"); os.IsNotExist(err) {
+		configFile := filepath.Join(homedir.HomeDir(), ".kube", "config")
+		return clientcmd.BuildConfigFromFlags("", configFile)
+	} else {
+		return rest.InClusterConfig()
+	}
 }
 
 type K8sRequest struct {
@@ -164,7 +175,7 @@ func (r *K8sRequest) sendResponse(message *slack.Msg) {
 	}
 	resp, err := http.Post(r.ResponseUrl, "application/json", bytes.NewReader(b))
 	if err != nil {
-		log.Printf("faild to send slack message: [%s]", err.Error())
+		log.Printf("failed to send slack message: [%s]", err.Error())
 		return
 	}
 	if resp.StatusCode != 200 {
@@ -216,6 +227,7 @@ func (r K8sRequest) createNamespace() error {
 		},
 	}
 
+	log.Printf("creating ns %s", r.NsName())
 	_, err := r.K8s.CoreV1().Namespaces().Create(ns)
 	return err
 }
@@ -231,6 +243,7 @@ func (r K8sRequest) configureResourceLimits() error {
 			},
 		},
 	}
+	log.Printf("setting quotas for ns %s", r.NsName())
 	_, err := r.K8s.CoreV1().ResourceQuotas(r.NsName()).Create(quota)
 	return err
 }
@@ -244,25 +257,23 @@ func (r K8sRequest) createServiceAccount() (*v1.ServiceAccount, error) {
 			},
 		},
 	}
+	log.Printf("creating sa %s in ns %s", r.UserName, r.NsName())
 	return r.K8s.CoreV1().ServiceAccounts(r.NsName()).Create(sa)
 }
 
 func (r K8sRequest) getSecretName(account *v1.ServiceAccount) (string, error) {
-	opts := metav1.ListOptions{
-		Watch:         true,
-		LabelSelector: "userId = " + r.UserID,
-	}
-	watch, err := r.K8s.CoreV1().ServiceAccounts(r.NsName()).Watch(opts)
+	time.Sleep(2 * time.Second)
+	acct, err := r.K8s.CoreV1().ServiceAccounts(r.NsName()).Get(account.Name, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
-	for {
-		x := <-watch.ResultChan()
-		if x.Type == watch2.Added {
-			acct := x.Object.(*v1.ServiceAccount)
-			return acct.Secrets[0].Name, nil
-		}
+	if len(acct.Secrets) == 0 {
+		return "", errors.New("no secret found after 10 seconds")
 	}
+	return acct.Secrets[0].Name, nil
+}
+
+
 }
 
 func (r K8sRequest) getSecretValue(sn string) (string, error) {
