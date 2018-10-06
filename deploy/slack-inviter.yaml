@@ -1,0 +1,62 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: slack-inviter
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: slack-inviter-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: slack-inviter
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: slack-inviter
+  namespace: slack-inviter
+spec:
+  selector:
+    app: slack-inviter
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slack-inviter
+  namespace: slack-inviter
+  labels:
+    app: slack-inviter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slack-inviter
+  template:
+    metadata:
+      name: slack-inviter
+      namespace: slack-inviter
+      labels:
+        app: slack-inviter
+    spec:
+      containers:
+      - name: slack-inviter
+        image: gcr.io/k8s-workshop-213617/k8s-slack-inviter:latest
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8080
+        env:
+          - name: SLACK_TOKEN
+            value: NzAOmI7gUdvPkUARiIKflLVb
+      restartPolicy: Always
