@@ -7,6 +7,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	watch2 "k8s.io/apimachinery/pkg/watch"
+	"os"
 
 	"path/filepath"
 	"net/http"
@@ -24,9 +25,10 @@ import (
 
 var clientset *kubernetes.Clientset
 var host string
-var token = "token"
+var token = ""
 
 func main() {
+	token = os.Getenv("SLACK_TOKEN")
 	configFile := filepath.Join(homedir.HomeDir(), ".kube", "config")
 	config, err := clientcmd.BuildConfigFromFlags("", configFile)
 	host = config.Host
