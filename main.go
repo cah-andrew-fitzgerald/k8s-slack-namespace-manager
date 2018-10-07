@@ -27,7 +27,7 @@ import (
 )
 
 var clientset *kubernetes.Clientset
-var host string
+var host = "https://104.197.11.164"
 var token = ""
 
 func main() {
