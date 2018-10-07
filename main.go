@@ -297,7 +297,7 @@ func (r K8sRequest) bindRole(sa string) error {
 		},
 		RoleRef: v12.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
+			Kind:     "ClusterRole",
 			Name:     "edit",
 		},
 	}
